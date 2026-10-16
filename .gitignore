@@ -1,0 +1,28 @@
+# Build output
+core/target/
+
+# Python
+agent/.venv/
+__pycache__/
+.pytest_cache/
+*.pyc
+
+# Secrets and local data. Never commit these.
+.env
+.env.*
+!.env.example
+uploads/
+*.pdf
+*.jpg
+*.jpeg
+*.png
+*.heic
+*.csv
+# Synthetic test fixtures are allowed (CLAUDE.md: synthetic data only)
+!**/src/test/resources/**
+!**/tests/fixtures/**
+
+# Editors and OS
+.idea/
+.vscode/
+.DS_Store
