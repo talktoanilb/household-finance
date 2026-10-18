@@ -11,7 +11,7 @@ Read `docs/spec.md` before any change. It is the source of truth for scope.
 - Database money columns are `NUMERIC(12,2)`. Round only at presentation.
 
 ## Where logic lives
-- Margin, categorization and anomaly math lives only in the Java core.
+- Parsing, categorization and anomaly math live only in the Java core.
 - The Python agent calls core functionality through MCP tools. It must not compute totals, matches or flags itself.
 
 ## Anomaly detection

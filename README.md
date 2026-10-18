@@ -2,7 +2,7 @@
 
 A shared household tool for spending, subscriptions, insurance and health claims. Bills arrive as photos or manual entries, statements and billing emails are matched to them, and a weekly digest shows earnings, spending, anomalies and renewals.
 
-Status: **M0** (foundation). Specification: [`docs/spec.md`](docs/spec.md).
+Status: **M0** done, **M1** in progress (CSV statement parsers done; bill-photo OCR next). Specification: [`docs/spec.md`](docs/spec.md).
 
 ## Layout
 
@@ -34,6 +34,12 @@ Local credentials in `docker-compose.yml` and `application.yml` are for developm
 - **OCR:** Tesseract, run locally, so bill photos are not sent to a third party. Claude vision was rejected for v1 for this reason. Manual entry is the fallback.
 - **Deployment:** Deferred to M9. Local Docker Compose until then.
 - **Plaid:** Not in v1. CSV statement upload first.
+
+## M1 progress
+
+- `core/.../statement/`: `ChaseCheckingParser` and `CitiCostcoVisaParser` turn bank CSVs into `StatementLine`s with an idempotency fingerprint (`external_ref`). Strict header check, 2-decimal money, no file contents in error messages.
+- `V2__external_ref_uniqueness_without_account.sql`: fixes duplicate imports when `account_id` is NULL.
+- Not built yet: persisting parsed lines (needs account selection), pending-to-cleared status updates on re-import, Bank of America CSV, Tesseract OCR for bill photos.
 
 ## Verification status (M0)
 
