@@ -2,7 +2,7 @@
 
 A shared household tool for spending, subscriptions, insurance and health claims. Bills arrive as photos or manual entries, statements and billing emails are matched to them, and a weekly digest shows earnings, spending, anomalies and renewals.
 
-Status: **M0** done, **M1** in progress (CSV statement parsers done; bill-photo OCR next). Specification: [`docs/spec.md`](docs/spec.md).
+Status: **M0** done, **M1** in progress (M1a Chase/Citi CSV parsers done; M1b ingestion foundation next). Specification: [`docs/spec.md`](docs/spec.md).
 
 ## Layout
 
@@ -31,7 +31,7 @@ Local credentials in `docker-compose.yml` and `application.yml` are for developm
 ## Decisions so far
 
 - **UI:** React with Vite (M8). Not started.
-- **OCR:** Tesseract, run locally, so bill photos are not sent to a third party. Claude vision was rejected for v1 for this reason. Manual entry is the fallback.
+- **OCR and extraction:** Hybrid. Tesseract and PDF text run locally by default. AI extraction is opt-in (off by default) for hard layouts, because documents would leave the machine. Anything unclear is asked of the user, never guessed. Manual entry is the fallback.
 - **Deployment:** Deferred to M9. Local Docker Compose until then.
 - **Plaid:** Not in v1. CSV statement upload first.
 

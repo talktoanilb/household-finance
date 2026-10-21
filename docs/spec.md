@@ -31,13 +31,13 @@ Users: Household head + spouse. Shared visibility into all spending.
 
 ## 4. Inputs
 
-**Bills (by either household member):**
-- Photo upload with OCR to extract vendor, amount, date, category.
-- Or manual entry: vendor, amount, date, category, payment method.
+**Bills and receipts (by either household member), any vendor:**
+- Utility, grocery, insurance, medical and any other payment.
+- Photo, PDF or manual entry. Extraction of vendor, amount, date and category (see "Ingestion and confirmation" in Section 5).
 
-**Financial data:**
-- Bank statements as CSV (exported from Chase, Citi, etc.).
-- Credit card statements as CSV.
+**Financial data, from any bank or card issuer:**
+- Bank and credit card statements as CSV or PDF (text PDFs and scanned PDFs).
+- Known layouts (Chase checking, Citi Costco Visa) have dedicated parsers. Any other layout is learned once per account (see Section 5).
 - Plaid integration (optional, for auto-sync later).
 
 **Email monitoring:**
@@ -63,6 +63,18 @@ Users: Household head + spouse. Shared visibility into all spending.
 Each transaction has: date, vendor, amount, category, payment method (card ending in X, bank account), source (photo, manual, statement, email), status (reconciled, pending, flagged).
 
 Categories (auto-detect, user-editable): groceries, utilities, insurance, subscriptions, health, transport, home, dining, entertainment, other.
+
+### Ingestion and confirmation
+
+Principle: **AI proposes, Java verifies, the user confirms.** The app never saves a number it is not sure of.
+
+1. **Identify** the document: bank statement, card statement, receipt, utility bill, insurance bill, medical bill or other.
+2. **Extract** candidate lines or fields: known-layout parser, learned column mapping for CSV, text layer or OCR for PDFs and photos, and optional AI extraction (Section 9) for hard layouts.
+3. **Verify in Java** (the AI never decides): dates parse and are plausible, amounts have at most 2 decimals, running balances reconcile, line items sum to the stated total, and the document is not a duplicate (hash and line fingerprints).
+4. **Ask the user** when verification fails or a field is unclear, with a plain message that says what is wrong and why. Example: "These lines add up to $212.40 but the statement total is $221.40. Which is right?" Options: confirm, correct, upload a clearer file, or enter manually.
+5. **Save** only after every open question is answered. Nothing unconfirmed or failing verification is written to `transactions`.
+
+**Learning layouts.** The first time a layout is seen (a given bank and account type, such as Wells Fargo checking CSV), the app asks which column is date, description, amount and so on, and which sign means money out. The mapping is stored per account and reused. If a later file's header or structure no longer matches, the app stops and asks again. A known layout does not skip verification: every upload is checked every time.
 
 ### Subscriptions
 
@@ -104,7 +116,7 @@ Three services plus a web UI and email delivery.
 
 ### Core service (Java 21, Spring Boot)
 
-- Parser library: OCR, statement parsing (CSV), email extraction, PDF extraction.
+- Ingestion library: known-layout CSV parsers, learned-layout CSV mapping, PDF text and OCR extraction, email extraction, and an optional AI extractor behind a `DocumentExtractor` interface. Verification and confirmation logic lives here, never in the extractor.
 - Business logic: categorization, anomaly detection, subscription tracking.
 - REST API and MCP server.
 - PostgreSQL for transactions, users, subscriptions, policies.
@@ -146,6 +158,8 @@ Three services plus a web UI and email delivery.
 | `flag_anomalies` | date range | list of flagged transactions with reason and priority |
 | `extract_policy_info` | PDF | coverage summary, limits, deductibles, renewal date |
 | `extract_eob_info` | PDF | claims, service dates, charges, insurance paid, patient responsibility |
+| `get_pending_questions` | household | open questions about uploaded documents (what is unclear and why) |
+| `answer_question` | question ID, answer | applies the answer and saves the verified lines |
 | `generate_digest` | date range | weekly digest summary (plain text or HTML) |
 | `get_spending_by_category` | date range | total and breakdown by category |
 
@@ -163,7 +177,8 @@ Three services plus a web UI and email delivery.
 
 ## 9. Safety and legal posture
 
-- **Privacy:** All data stored in your own database. No sharing with third parties. Encrypted passwords, secure session handling.
+- **Privacy:** All data stored in your own database. No sharing with third parties except the opt-in AI reading below. Encrypted passwords, secure session handling.
+- **AI document reading is opt-in and off by default.** When on, only the single document being read is sent to the AI service, with full account and card numbers masked to the last 4 where detectable. Nothing is sent when it is off. The setting is visible in Settings and either household member can turn it off. With it off, local extraction still works but asks more questions.
 - **For both users:** Clear data-sharing agreement (husband and wife own the household data together).
 - **No financial advice:** Tool shows data and flags anomalies. Never recommends cutting a subscription or paying a bill early.
 - **OCR limits:** Photos must be readable (not too blurry); manual entry is fallback.
@@ -174,7 +189,8 @@ Three services plus a web UI and email delivery.
 
 - **Golden tests (30+):** Hand-checked transaction categorizations, anomaly detection (duplicate, outlier, new vendor), subscription extraction from statements, digest formatting.
 - **OCR tests:** Real bill photos (utility, grocery, insurance) checked against manual entry.
-- **Statement parse tests:** Chase, Citi, Bank of America CSVs parsed correctly; transactions matched to existing data.
+- **Statement parse tests:** Chase, Citi, Bank of America, Wells Fargo CSVs (synthetic fixtures that copy real layouts but use fake data) parsed correctly; transactions matched to existing data.
+- **Ingestion tests:** a total mismatch raises a question and saves nothing; an unconfirmed extraction is never saved; a changed header triggers a re-ask; a known layout is read without questions but still verified; an unreadable photo produces a clear message with options.
 - **Email extraction:** Billing confirmations and alerts parsed and matched to transactions.
 - **Property tests:** Spending totals are correct; anomaly flags are always for valid reasons; digest includes all categories.
 - **Agent evaluation:** 40 user scenarios (upload bill, link statement, flag anomaly, etc.) with checks for correctness and no unsolicited advice.
@@ -182,7 +198,10 @@ Three services plus a web UI and email delivery.
 ## 11. Milestones (sequence, not dates)
 
 - **M0:** repo, this spec, CLAUDE.md, CI skeleton, PostgreSQL schema.
-- **M1:** OCR and statement parsing (CSV), hand-tested extraction from real bills and statements.
+- **M1a (done):** Chase and Citi CSV parsers, import fingerprint, V2 duplicate fix.
+- **M1b:** Ingestion foundation: accounts, saving verified lines, layout registry, verification checks, pending-question flow.
+- **M1c:** Learned-layout CSV for any bank (Bank of America and Wells Fargo synthetic fixtures).
+- **M1d:** PDF statements and bill photos: text layer, OCR, optional AI extraction, with the confirm-before-save flow.
 - **M2:** Java business logic (categorization, anomaly detection, subscription tracking).
 - **M3:** REST API and MCP server over the logic.
 - **M4:** Python LangGraph agent calling MCP tools, RAG over transaction history.
@@ -196,7 +215,8 @@ Definition of done for v1: live app, both of you uploading bills and seeing the 
 
 ## 12. Risks
 
-- **OCR failures:** Blurry photos or unusual formats won't parse. Mitigated by fallback manual entry.
+- **OCR and extraction failures:** Blurry photos or unusual formats won't parse, and AI extraction can misread amounts. Mitigated by Java verification, asking the user, and manual entry. A wrong amount is never saved silently.
+- **Sending documents to an AI service:** Mitigated by opt-in, masking, one-document-at-a-time and an off switch.
 - **Statement format drift:** If your bank changes CSV format, parsing breaks. Mitigated by monitoring real exports and updating parser.
 - **Privacy:** Storing household financial data is sensitive. Mitigated by local database, encryption, no third-party sharing.
 - **Scope creep:** Insurance and health PDFs can be complex. Mitigated by accepting "best effort" extraction and flagging manual review needed.
@@ -207,7 +227,7 @@ Definition of done for v1: live app, both of you uploading bills and seeing the 
 - UI framework: React with Vite vs. Next.js (simpler auth, deployment).
 - Email delivery: SendGrid, AWS SES, or Gmail API (forwarding to yourself)?
 - Deployment: AWS (EC2 + RDS), Railway, or Heroku?
-- OCR library: Tesseract (free, open source) or Claude's vision (paid, better).
+- OCR and extraction: **Decided: hybrid.** Tesseract and text-layer extraction run locally by default; AI extraction is opt-in. Still open: which AI service and model, and how good local-only mode is on real bills.
 - Plaid integration timeline: v1 or v2?
 
 ## 14. Draft CLAUDE.md for the repo

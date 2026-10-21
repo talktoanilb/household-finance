@@ -14,6 +14,12 @@ Read `docs/spec.md` before any change. It is the source of truth for scope.
 - Parsing, categorization and anomaly math live only in the Java core.
 - The Python agent calls core functionality through MCP tools. It must not compute totals, matches or flags itself.
 
+## Document ingestion
+- AI proposes, Java verifies, the user confirms. An extractor (OCR or AI) only suggests values; totals, balances and dates are checked in Java.
+- Never guess. If a value is unclear or a check fails, ask the user with a plain message that says what is wrong. Never save unconfirmed or failing lines.
+- A known layout still gets verified on every upload. If a file's structure changes, stop and ask again.
+- AI document reading is opt-in per household and off by default. Send only the one document being read, with account and card numbers masked to the last 4 where detectable.
+
 ## Anomaly detection
 - Be conservative: flag only when there is a clear reason. False negatives are better than false positives for a personal finance tool.
 - Every flag must include a human-readable `reason`.
