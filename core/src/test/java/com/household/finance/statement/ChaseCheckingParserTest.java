@@ -36,6 +36,7 @@ class ChaseCheckingParserTest {
         assertEquals(new BigDecimal("142.37"), first.amount());
         assertEquals(Direction.EXPENSE, first.direction());
         assertEquals(Status.POSTED, first.status());
+        assertEquals(new BigDecimal("3210.55"), first.balance());
 
         StatementLine payroll = lines.get(2);
         assertEquals(new BigDecimal("2480.00"), payroll.amount());

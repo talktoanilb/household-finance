@@ -47,7 +47,7 @@ public final class CitiCostcoVisaParser implements StatementParser {
             }
             BigDecimal signed = direction == StatementLine.Direction.EXPENSE ? amount.negate() : amount;
             lines.add(new StatementLine(date, description, amount, direction, status,
-                    fingerprint.next(date, description, signed, null)));
+                    fingerprint.next(date, description, signed, null), null));
         }
         return List.copyOf(lines);
     }

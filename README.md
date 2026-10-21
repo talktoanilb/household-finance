@@ -2,7 +2,7 @@
 
 A shared household tool for spending, subscriptions, insurance and health claims. Bills arrive as photos or manual entries, statements and billing emails are matched to them, and a weekly digest shows earnings, spending, anomalies and renewals.
 
-Status: **M0** done, **M1** in progress (M1a Chase/Citi CSV parsers done; M1b ingestion foundation next). Specification: [`docs/spec.md`](docs/spec.md).
+Status: **M0** done, **M1** in progress (M1a Chase/Citi CSV parsers done; M1b ingestion foundation built, pending your Maven run; M1c learned CSV layouts next). Specification: [`docs/spec.md`](docs/spec.md).
 
 ## Layout
 
@@ -39,7 +39,8 @@ Local credentials in `docker-compose.yml` and `application.yml` are for developm
 
 - `core/.../statement/`: `ChaseCheckingParser` and `CitiCostcoVisaParser` turn bank CSVs into `StatementLine`s with an idempotency fingerprint (`external_ref`). Strict header check, 2-decimal money, no file contents in error messages.
 - `V2__external_ref_uniqueness_without_account.sql`: fixes duplicate imports when `account_id` is NULL.
-- Not built yet: persisting parsed lines (needs account selection), pending-to-cleared status updates on re-import, Bank of America CSV, Tesseract OCR for bill photos.
+- **M1b** (`core/.../ingest/`): `ImportService` stages parsed lines, `Verifier` checks them in Java (running balance in either sort order, implausible dates), and anything unclear becomes a question for the user. Nothing reaches `transactions` until every question is answered; confirm, exclude a line, or correct an amount. Re-imports skip lines already saved, and the same file cannot be imported twice. Tables are in `V3__ingestion_staging.sql`.
+- Not built yet: learned layouts for other banks (M1c), PDF statements and bill photos (M1d), re-verification after an amount correction, pending-to-cleared updates on re-import, and any REST endpoint or screen for answering questions (M3/M8).
 
 ## Verification status (M0)
 

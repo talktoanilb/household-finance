@@ -33,14 +33,13 @@ public final class ChaseCheckingParser implements StatementParser {
             if (signed.signum() == 0) {
                 throw StatementParseException.atLine(row.lineNumber(), "amount is zero");
             }
-            String balance = CsvStatementSupport.field(row, col.get("Balance"));
-            if (!balance.isEmpty()) {
-                balance = CsvStatementSupport.money(row, balance).toPlainString();
-            }
+            String balanceText = CsvStatementSupport.field(row, col.get("Balance"));
+            BigDecimal balance = balanceText.isEmpty() ? null : CsvStatementSupport.money(row, balanceText);
             StatementLine.Direction direction =
                     signed.signum() < 0 ? StatementLine.Direction.EXPENSE : StatementLine.Direction.INCOME;
             lines.add(new StatementLine(date, description, signed.abs(), direction,
-                    StatementLine.Status.POSTED, fingerprint.next(date, description, signed, balance)));
+                    StatementLine.Status.POSTED, fingerprint.next(date, description, signed,
+                    balance == null ? null : balance.toPlainString()), balance));
         }
         return List.copyOf(lines);
     }
