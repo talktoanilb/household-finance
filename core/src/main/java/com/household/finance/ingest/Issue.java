@@ -7,7 +7,7 @@ package com.household.finance.ingest;
  */
 public record Issue(int lineNo, Kind kind, String message) {
 
-    public enum Kind { BALANCE_MISMATCH, DATE_IMPLAUSIBLE }
+    public enum Kind { BALANCE_MISMATCH, DATE_IMPLAUSIBLE, SUMMARY_MISMATCH, STATEMENT_GAP }
 
     public boolean wholeFile() {
         return lineNo == 0;

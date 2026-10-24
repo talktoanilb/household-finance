@@ -1,6 +1,7 @@
 package com.household.finance.ingest;
 
 import com.household.finance.statement.StatementLine;
+import com.household.finance.statement.StatementSummary;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.ArrayList;
@@ -30,8 +31,91 @@ public final class Verifier {
         return issues;
     }
 
+    /**
+     * Checks the lines against the totals the bank printed: beginning balance plus every line must equal the
+     * ending balance, the printed deposits total (when there is one) must equal the deposit lines, and the
+     * first line's balance must follow from the beginning balance. Statement lines are chronological.
+     */
+    public static List<Issue> verifySummary(List<StatementLine> lines, StatementSummary summary) {
+        if (summary.liability()) {
+            return verifyCardSummary(lines, summary);
+        }
+        List<Issue> issues = new ArrayList<>();
+        BigDecimal change = BigDecimal.ZERO;
+        BigDecimal deposits = BigDecimal.ZERO;
+        for (StatementLine line : lines) {
+            change = change.add(signed(line));
+            if (signed(line).signum() > 0) {
+                deposits = deposits.add(line.amount());
+            }
+        }
+        BigDecimal expectedEnding = summary.beginningBalance().add(change);
+        if (expectedEnding.compareTo(summary.endingBalance()) != 0) {
+            issues.add(new Issue(0, Issue.Kind.SUMMARY_MISMATCH,
+                    "The lines add up to a change of " + change.toPlainString() + ", so the statement should end at "
+                            + expectedEnding.toPlainString() + ", but it says " + summary.endingBalance().toPlainString()
+                            + ". A line may be missing or misread."));
+        }
+        if (summary.depositsTotal() != null && deposits.compareTo(summary.depositsTotal()) != 0) {
+            issues.add(new Issue(0, Issue.Kind.SUMMARY_MISMATCH,
+                    "The statement says deposits total " + summary.depositsTotal().toPlainString()
+                            + " but the deposit lines total " + deposits.toPlainString() + "."));
+        }
+        if (!lines.isEmpty() && lines.get(0).balance() != null) {
+            StatementLine first = lines.get(0);
+            BigDecimal expected = summary.beginningBalance().add(signed(first));
+            if (expected.compareTo(first.balance()) != 0) {
+                issues.add(new Issue(1, Issue.Kind.BALANCE_MISMATCH,
+                        "Line 1 (" + first.postedOn() + "): the balance does not follow from the statement's beginning balance. Expected "
+                                + expected.toPlainString() + " but the file says " + first.balance().toPlainString() + "."));
+            }
+        }
+        return issues;
+    }
+
+    /** Effect on a bank balance (money held): out is negative. */
     private static BigDecimal signed(StatementLine line) {
-        return line.direction() == StatementLine.Direction.EXPENSE ? line.amount().negate() : line.amount();
+        boolean out = line.direction() == StatementLine.Direction.EXPENSE
+                || line.direction() == StatementLine.Direction.TRANSFER_OUT;
+        return out ? line.amount().negate() : line.amount();
+    }
+
+    /**
+     * Credit-card statements carry no running balance, so the only checks are the printed totals:
+     * previous balance + purchases - payments and credits = new balance, and each printed total against its lines.
+     * Purchases are EXPENSE lines; payments (TRANSFER_IN) and refunds or credits (INCOME) reduce what is owed.
+     */
+    private static List<Issue> verifyCardSummary(List<StatementLine> lines, StatementSummary summary) {
+        List<Issue> issues = new ArrayList<>();
+        BigDecimal purchases = BigDecimal.ZERO;
+        BigDecimal credits = BigDecimal.ZERO;
+        for (StatementLine line : lines) {
+            if (line.direction() == StatementLine.Direction.EXPENSE) {
+                purchases = purchases.add(line.amount());
+            } else {
+                credits = credits.add(line.amount());
+            }
+        }
+        BigDecimal expectedNew = summary.beginningBalance().add(purchases).subtract(credits);
+        if (expectedNew.compareTo(summary.endingBalance()) != 0) {
+            issues.add(new Issue(0, Issue.Kind.SUMMARY_MISMATCH,
+                    "Previous balance " + summary.beginningBalance().toPlainString() + " plus the purchases "
+                            + purchases.toPlainString() + " minus the payments and credits " + credits.toPlainString()
+                            + " should give a new balance of " + expectedNew.toPlainString() + ", but the statement says "
+                            + summary.endingBalance().toPlainString() + ". A line, a fee or interest charge may be"
+                            + " missing or misread."));
+        }
+        if (summary.purchasesTotal() != null && purchases.compareTo(summary.purchasesTotal()) != 0) {
+            issues.add(new Issue(0, Issue.Kind.SUMMARY_MISMATCH,
+                    "The statement says purchases total " + summary.purchasesTotal().toPlainString()
+                            + " but the purchase lines total " + purchases.toPlainString() + "."));
+        }
+        if (summary.creditsTotal() != null && credits.compareTo(summary.creditsTotal()) != 0) {
+            issues.add(new Issue(0, Issue.Kind.SUMMARY_MISMATCH,
+                    "The statement says payments and credits total " + summary.creditsTotal().toPlainString()
+                            + " but those lines total " + credits.toPlainString() + "."));
+        }
+        return issues;
     }
 
     private static List<Issue> balanceIssues(List<StatementLine> lines) {

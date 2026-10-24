@@ -1,0 +1,32 @@
+ www.example.invalid Member Since 2018. Account number ending in: 4242
+
+ FEBRUARY STATEMENT
+ Billing Period: 02/17/27-03/16/27
+ New balance as of 03/16/27: $65.00
+ Account Summary
+ Previous balance                                $80.00
+ Payments                                       -$80.00
+ Credits                                         -$5.00
+ Purchases                                      +$70.00
+ Cash advances                                   +$0.00
+ Fees                                            +$0.00
+ Interest                                        +$0.00
+ New balance                                     $65.00
+
+ CARDHOLDER SUMMARY
+ JANE SAMPLE Card ending in 4242
+ New Charges $70.00
+
+ ACCOUNT SUMMARY
+ Sale   Post
+ Date   Date   Description                                           Amount
+
+ JANE SAMPLE
+ Standard Purchases
+ 03/01  03/02  SAMPLE MART ALLEN TX                                   $40.00
+ 03/05  03/05  SAMPLE FUEL PLANO TX                                   $30.00
+ 03/09  03/10  SAMPLE MART RETURN ALLEN TX                            -$5.00
+ 02/25  02/25  PAYMENT THANK YOU                                     -$80.00
+
+ Fees Charged
+ TOTAL FEES FOR THIS PERIOD $0.00

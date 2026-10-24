@@ -5,6 +5,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.household.finance.statement.ChaseCheckingParser;
 import com.household.finance.statement.StatementLine;
+import com.household.finance.statement.StatementSummary;
+import java.math.BigDecimal;
 import java.io.InputStreamReader;
 import java.io.StringReader;
 import java.nio.charset.StandardCharsets;
@@ -100,5 +102,50 @@ class VerifierTest {
         assertEquals(1, issues.get(0).lineNo());
         assertEquals(2, issues.get(1).lineNo());
         assertEquals(Issue.Kind.DATE_IMPLAUSIBLE, issues.get(0).kind());
+    }
+
+    private StatementSummary summary(String beginning, String ending, String deposits) {
+        return new StatementSummary(LocalDate.of(2026, 10, 1), LocalDate.of(2026, 10, 31), new BigDecimal(beginning),
+                new BigDecimal(ending), deposits == null ? null : new BigDecimal(deposits));
+    }
+
+    private List<StatementLine> summaryLines() throws Exception {
+        return parse("""
+                DEBIT,10/02/2026,SYNTHETIC A,-10.00,T,90.00,
+                CREDIT,10/03/2026,SYNTHETIC B,25.00,T,115.00,
+                """);
+    }
+
+    /** Hand-checked: 100.00 - 10.00 + 25.00 = 115.00; deposits 25.00. */
+    @Test
+    void summaryThatMatchesRaisesNothing() throws Exception {
+        assertEquals(List.of(), Verifier.verifySummary(summaryLines(), summary("100.00", "115.00", "25.00")));
+    }
+
+    @Test
+    void wrongEndingBalanceIsAWholeFileQuestion() throws Exception {
+        List<Issue> issues = Verifier.verifySummary(summaryLines(), summary("100.00", "120.00", "25.00"));
+        assertEquals(1, issues.size());
+        assertTrue(issues.get(0).wholeFile());
+        assertEquals(Issue.Kind.SUMMARY_MISMATCH, issues.get(0).kind());
+        assertTrue(issues.get(0).message().contains("115.00"));
+    }
+
+    @Test
+    void wrongDepositsTotalIsAQuestion() throws Exception {
+        List<Issue> issues = Verifier.verifySummary(summaryLines(), summary("100.00", "115.00", "30.00"));
+        assertEquals(1, issues.size());
+        assertEquals(Issue.Kind.SUMMARY_MISMATCH, issues.get(0).kind());
+    }
+
+    @Test
+    void firstLineMustFollowFromTheBeginningBalance() throws Exception {
+        List<Issue> issues = Verifier.verifySummary(summaryLines(), summary("95.00", "110.00", "25.00"));
+        assertTrue(issues.stream().anyMatch(i -> i.lineNo() == 1 && i.kind() == Issue.Kind.BALANCE_MISMATCH));
+    }
+
+    @Test
+    void depositsTotalIsOptional() throws Exception {
+        assertEquals(List.of(), Verifier.verifySummary(summaryLines(), summary("100.00", "115.00", null)));
     }
 }

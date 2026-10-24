@@ -1,0 +1,34 @@
+                                                                                                         Page 1 of 3
+                              Discover it Card ending in 4242
+                              CARDMEMBER SINCE 2020
+                              OPEN TO CLOSE DATE: 12/15/2026 - 01/14/2027
+
+ Account Summary 12/15/2026 - 01/14/2027                              Payment Information
+ Previous Balance                          $100.00                    New Balance        Minimum Payment    Payment Due Date
+ Payments and Credits                    - $112.50                    $152.75            $35.00             02/08/2027
+ Transactions                            + $165.25
+ Cash Advances                              + $0.00
+ Fees Charged                               + $0.00
+ Interest Charged                           + $0.00
+ New Balance:                              $152.75
+
+                              Discover it Card ending in 4242
+                              OPEN TO CLOSE DATE: 12/15/2026 - 01/14/2027
+
+ Transactions                                                          Rewards Summary
+ Visit example.invalid to see detailed transactions.                   PREVIOUS BALANCE $1.00
+JANE SAMPLE #4242: PAYMENTS AND CREDITS                                EARNED THIS PERIOD $2.00
+TRANS.
+DATE   PAYMENTS AND CREDITS                                  AMOUNT
+12/28  CAPITAL ONE AUTOPAY PYMT                            - $100.00
+01/03  ACME STORE REFUND                                    - $12.50
+
+JANE SAMPLE #4242: PURCHASES                                           OCT-DEC Activate with QR Code
+TRANS.
+DATE   PURCHASES                                             AMOUNT
+12/13  CORNER CAFE DALLAS TX                                  $20.00
+12/20  GROCERY MART PLANO TX                                  $45.50
+01/05  HARDWARE DEPOT FRISCO TX                               $99.75
+
+ Fees and Interest Charged
+TOTAL FEES FOR THIS PERIOD $0.00

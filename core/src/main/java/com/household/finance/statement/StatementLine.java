@@ -18,7 +18,12 @@ public record StatementLine(
         String externalRef,
         BigDecimal balance) {
 
-    public enum Direction { EXPENSE, INCOME }
+    /**
+     * Seen from the account the statement belongs to. TRANSFER_IN / TRANSFER_OUT are money moving between the
+     * household's own accounts (for example a card payment): they are not spending or earnings and must be left
+     * out of those totals. A card payment is TRANSFER_IN on the card and TRANSFER_OUT on the checking account.
+     */
+    public enum Direction { EXPENSE, INCOME, TRANSFER_IN, TRANSFER_OUT }
 
     /** Subset of the schema's transaction statuses that a statement can produce. */
     public enum Status { PENDING, POSTED }

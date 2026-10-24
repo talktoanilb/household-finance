@@ -2,7 +2,7 @@
 
 A shared household tool for spending, subscriptions, insurance and health claims. Bills arrive as photos or manual entries, statements and billing emails are matched to them, and a weekly digest shows earnings, spending, anomalies and renewals.
 
-Status: **M0** done, **M1** in progress (M1a Chase/Citi CSV parsers done; M1b ingestion foundation built, pending your Maven run; M1c learned CSV layouts next). Specification: [`docs/spec.md`](docs/spec.md).
+Status: **M0** done, **M1** in progress (M1a CSV parsers and M1b ingestion foundation done; M1d Chase checking PDF statements built; M1c learned CSV layouts and PDF layouts for other banks next). Specification: [`docs/spec.md`](docs/spec.md).
 
 ## Layout
 
@@ -40,6 +40,8 @@ Local credentials in `docker-compose.yml` and `application.yml` are for developm
 - `core/.../statement/`: `ChaseCheckingParser` and `CitiCostcoVisaParser` turn bank CSVs into `StatementLine`s with an idempotency fingerprint (`external_ref`). Strict header check, 2-decimal money, no file contents in error messages.
 - `V2__external_ref_uniqueness_without_account.sql`: fixes duplicate imports when `account_id` is NULL.
 - **M1b** (`core/.../ingest/`): `ImportService` stages parsed lines, `Verifier` checks them in Java (running balance in either sort order, implausible dates), and anything unclear becomes a question for the user. Nothing reaches `transactions` until every question is answered; confirm, exclude a line, or correct an amount. Re-imports skip lines already saved, and the same file cannot be imported twice. Tables are in `V3__ingestion_staging.sql`.
+- **Chase checking PDF statements** (`ChasePdfStatementParser`, `ChasePdfImporter`): text is extracted locally with Apache PDFBox. The statement is checked against its own printed totals (beginning balance + every line = ending balance, deposits total, first-line balance), against the account's last 4 digits, and against the previous statement for the same account (a missing month or a balance that does not join up becomes a question). Only the last 4 digits of the account number are kept. Scanned PDFs are not supported yet and are refused with a clear message.
+- To check your own real statements without committing them: `REAL_STATEMENT_PDF="/path/one.pdf,/path/two.pdf" mvn -Dtest=RealStatementPdfTest test`. It prints only counts. Never commit real statements.
 - Not built yet: learned layouts for other banks (M1c), PDF statements and bill photos (M1d), re-verification after an amount correction, pending-to-cleared updates on re-import, and any REST endpoint or screen for answering questions (M3/M8).
 
 ## Verification status (M0)

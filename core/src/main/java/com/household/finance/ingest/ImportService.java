@@ -1,8 +1,10 @@
 package com.household.finance.ingest;
 
+import com.household.finance.statement.ParsedStatement;
 import com.household.finance.statement.StatementLine;
 import com.household.finance.statement.StatementParseException;
 import com.household.finance.statement.StatementParser;
+import com.household.finance.statement.StatementSummary;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.math.BigDecimal;
@@ -11,6 +13,7 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Clock;
 import java.time.LocalDate;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.HexFormat;
 import java.util.List;
@@ -26,8 +29,8 @@ import org.springframework.transaction.annotation.Transactional;
  * parsed stores nothing and returns a plain message. Every query is scoped by household, so one
  * household can never read or change another's imports.
  * <p>
- * Not in M1b: re-verifying after an amount correction, updating a pending line when it later clears,
- * and learned layouts for unknown banks (M1c).
+ * Not yet: re-verifying after an amount correction, updating a pending line when it later clears,
+ * checking a statement against a LATER one already saved, and learned layouts for unknown banks (M1c).
  */
 @Service
 public class ImportService {
@@ -50,14 +53,9 @@ public class ImportService {
                                          String layout, StatementParser parser, byte[] fileBytes) {
         requireAccountInHousehold(householdId, accountId);
         String sha = sha256(fileBytes);
-
-        Integer already = jdbc.queryForObject("""
-                SELECT count(*) FROM statement_imports
-                WHERE household_id = ? AND account_id = ? AND file_sha256 = ? AND status <> 'CANCELLED'
-                """, Integer.class, householdId, accountId, sha);
-        if (already != null && already > 0) {
-            return new ImportOutcome(ImportOutcome.Status.ALREADY_IMPORTED, null, 0, 0,
-                    List.of("This exact file was already imported for this account. Nothing was changed."));
+        ImportOutcome already = alreadyImported(householdId, accountId, sha);
+        if (already != null) {
+            return already;
         }
 
         List<StatementLine> lines;
@@ -69,11 +67,57 @@ public class ImportService {
         } catch (IOException e) {
             return ImportOutcome.rejected("The file could not be read. Nothing was saved.");
         }
+        return stage(householdId, accountId, userId, layout, ParsedStatement.ofLines(lines), sha);
+    }
+
+    /**
+     * For formats that carry totals, such as PDF statements: the caller has already extracted and parsed the
+     * file. The statement's own totals, its account digits and the previous statement are all checked.
+     */
+    @Transactional
+    public ImportOutcome importParsed(long householdId, long accountId, long userId,
+                                      String layout, ParsedStatement parsed, byte[] fileBytes) {
+        requireAccountInHousehold(householdId, accountId);
+        String sha = sha256(fileBytes);
+        ImportOutcome already = alreadyImported(householdId, accountId, sha);
+        if (already != null) {
+            return already;
+        }
+        return stage(householdId, accountId, userId, layout, parsed, sha);
+    }
+
+    private ImportOutcome alreadyImported(long householdId, long accountId, String sha) {
+        Integer count = jdbc.queryForObject("""
+                SELECT count(*) FROM statement_imports
+                WHERE household_id = ? AND account_id = ? AND file_sha256 = ? AND status <> 'CANCELLED'
+                """, Integer.class, householdId, accountId, sha);
+        if (count != null && count > 0) {
+            return new ImportOutcome(ImportOutcome.Status.ALREADY_IMPORTED, null, 0, 0,
+                    List.of("This exact file was already imported for this account. Nothing was changed."));
+        }
+        return null;
+    }
+
+    private ImportOutcome stage(long householdId, long accountId, long userId,
+                                String layout, ParsedStatement parsed, String sha) {
+        if (parsed.accountLast4() != null) {
+            String actual = jdbc.queryForObject("SELECT last4 FROM financial_accounts WHERE id = ?", String.class, accountId);
+            if (!parsed.accountLast4().equals(actual)) {
+                return ImportOutcome.rejected("This statement is for the account ending " + parsed.accountLast4()
+                        + ", but the selected account ends in " + actual
+                        + ". Nothing was saved. Pick the matching account and try again.");
+            }
+        }
+        List<StatementLine> lines = parsed.lines();
+        StatementSummary summary = parsed.summary();
 
         long importId = jdbc.queryForObject("""
-                INSERT INTO statement_imports (household_id, account_id, file_sha256, layout, status, line_count, created_by_user_id)
-                VALUES (?, ?, ?, ?, 'NEEDS_ANSWERS', ?, ?) RETURNING id
-                """, Long.class, householdId, accountId, sha, layout, lines.size(), userId);
+                INSERT INTO statement_imports (household_id, account_id, file_sha256, layout, status, line_count,
+                                               created_by_user_id, period_start, period_end, beginning_balance, ending_balance)
+                VALUES (?, ?, ?, ?, 'NEEDS_ANSWERS', ?, ?, ?, ?, ?, ?) RETURNING id
+                """, Long.class, householdId, accountId, sha, layout, lines.size(), userId,
+                summary == null ? null : summary.periodStart(), summary == null ? null : summary.periodEnd(),
+                summary == null ? null : summary.beginningBalance(), summary == null ? null : summary.endingBalance());
 
         List<Object[]> rows = new ArrayList<>();
         for (int i = 0; i < lines.size(); i++) {
@@ -86,7 +130,11 @@ public class ImportService {
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, rows);
 
-        List<Issue> issues = Verifier.verify(lines, LocalDate.now(clock));
+        List<Issue> issues = new ArrayList<>(Verifier.verify(lines, LocalDate.now(clock)));
+        if (summary != null) {
+            issues.addAll(Verifier.verifySummary(lines, summary));
+            issues.addAll(continuityIssues(householdId, accountId, summary));
+        }
         for (Issue issue : issues) {
             jdbc.update("""
                     INSERT INTO ingestion_questions (household_id, import_id, line_no, kind, message)
@@ -98,6 +146,37 @@ public class ImportService {
                     issues.stream().map(Issue::message).toList());
         }
         return commit(householdId, importId, userId);
+    }
+
+    /**
+     * Compares this statement with the most recent earlier one already saved for the account: a hole between
+     * the two periods means a statement is missing, and the balances must join up. Only looks backwards.
+     */
+    private List<Issue> continuityIssues(long householdId, long accountId, StatementSummary summary) {
+        List<Object[]> previous = jdbc.query("""
+                SELECT period_end, ending_balance FROM statement_imports
+                WHERE household_id = ? AND account_id = ? AND status = 'COMMITTED'
+                  AND period_end IS NOT NULL AND ending_balance IS NOT NULL AND period_end < ?
+                ORDER BY period_end DESC LIMIT 1
+                """, (rs, n) -> new Object[] {rs.getObject(1, LocalDate.class), rs.getBigDecimal(2)},
+                householdId, accountId, summary.periodStart());
+        if (previous.isEmpty()) {
+            return List.of();
+        }
+        LocalDate previousEnd = (LocalDate) previous.get(0)[0];
+        BigDecimal previousEnding = (BigDecimal) previous.get(0)[1];
+        long gapDays = ChronoUnit.DAYS.between(previousEnd, summary.periodStart());
+        if (gapDays > 1) {
+            return List.of(new Issue(0, Issue.Kind.STATEMENT_GAP, "No statement has been imported for "
+                    + previousEnd.plusDays(1) + " to " + summary.periodStart().minusDays(1)
+                    + ". Transactions in that period are missing."));
+        }
+        if (previousEnding.compareTo(summary.beginningBalance()) != 0) {
+            return List.of(new Issue(0, Issue.Kind.STATEMENT_GAP, "This statement begins at "
+                    + summary.beginningBalance().toPlainString() + " but the previous statement ended at "
+                    + previousEnding.toPlainString() + "."));
+        }
+        return List.of();
     }
 
     @Transactional(readOnly = true)

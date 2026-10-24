@@ -1,0 +1,27 @@
+                    Manage your account online at:              Customer Service:
+ Account Number: XXXX XXXX XXXX 4242
+ Previous Balance                      $50.00
+ Payment, Credits                     -$50.00
+ Purchases                            +$42.34
+ Cash Advances                         $0.00
+ Balance Transfers                     $0.00
+ Fees Charged                          $0.00
+ Interest Charged                      $0.00
+ New Balance                          $42.34
+ Opening/Closing Date                 12/16/26 - 01/15/27
+
+ ACCOUNT ACTIVITY
+
+ Date of
+ Transaction   Merchant Name or Transaction Description                $ Amount
+ PAYMENTS AND OTHER CREDITS
+
+ 12/20   AUTOMATIC PAYMENT - THANK YOU                                  -50.00
+
+ PURCHASE
+
+ 12/18   SAMPLE BOOKS DALLAS TX                                         30.00
+ 01/02   SAMPLE CAFE PLANO TX                                           12.34
+
+ 2026 Totals Year-to-Date
+ Total fees charged in 2026 $0.00
