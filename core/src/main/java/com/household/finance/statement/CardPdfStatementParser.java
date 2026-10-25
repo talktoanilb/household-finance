@@ -148,7 +148,7 @@ public final class CardPdfStatementParser {
                 StatementLine.Direction direction;
                 if (!credit) {
                     direction = StatementLine.Direction.EXPENSE;
-                } else if (isPayment(description)) {
+                } else if (looksLikePayment(description)) {
                     direction = StatementLine.Direction.TRANSFER_IN;
                 } else {
                     direction = StatementLine.Direction.INCOME;
@@ -168,7 +168,7 @@ public final class CardPdfStatementParser {
     }
 
     /** A negative line that pays the card (not a refund): "AUTOMATIC PAYMENT - THANK YOU", "AUTOPAY PYMT". */
-    private static boolean isPayment(String description) {
+    public static boolean looksLikePayment(String description) {
         String d = description.toUpperCase();
         return d.contains("PAYMENT") || d.contains("PYMT") || d.contains("AUTOPAY");
     }
