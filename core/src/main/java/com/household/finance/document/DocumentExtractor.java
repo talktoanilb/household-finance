@@ -177,6 +177,23 @@ public final class DocumentExtractor {
         BigDecimal tax = vote(all.stream().map(Extracted::tax).toList(), "tax", notes);
         LocalDate date = vote(all.stream().map(Extracted::documentDate).toList(), "date", notes);
         LocalDate due = vote(all.stream().map(Extracted::dueDate).toList(), "due date", notes);
+        // When the readings split on the tax, only subtotal + one of the tax readings can be the total. A total
+        // that fits none of them (a misread payment line, say) is not proposed; the consistent ones are offered.
+        if (tax == null && subtotal != null) {
+            Set<BigDecimal> taxes = new TreeSet<>();
+            all.forEach(x -> { if (x.tax() != null) { taxes.add(x.tax()); } });
+            Set<String> possible = new TreeSet<>();
+            boolean fits = false;
+            for (BigDecimal t : taxes) {
+                BigDecimal sum = subtotal.add(t);
+                possible.add(sum.toPlainString());
+                fits |= total != null && total.compareTo(sum) == 0;
+            }
+            if (taxes.size() > 1 && !fits) {
+                total = null;
+                notes.add("The total should be " + String.join(" or ", possible) + ". Say which is right.");
+            }
+        }
         DocumentKind kind = vote(all.stream().map(x -> x.kind() == DocumentKind.UNKNOWN ? null : x.kind()).toList(), "kind", new ArrayList<>());
         String vendor = all.stream().map(Extracted::vendor).filter(v -> v != null).findFirst().orElse(null);
         // Explanations of how a value was found, from the readings that agree with the final total.

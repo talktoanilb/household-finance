@@ -204,4 +204,12 @@ class DocumentExtractorTest {
         assertEquals(new BigDecimal("7.57"), x.total());
         assertEquals(new BigDecimal("6.99"), x.subtotal());
     }
+
+    @Test
+    void aTotalThatFitsNoSubtotalPlusTaxIsReplacedByTheConsistentOnes() {
+        var x = DocumentExtractor.extractAll(java.util.List.of(
+                "TEST MARKET\nSUBTOTAL 6.99\nTAX 0.58\nVisa 7.87\n", "TEST MARKET\nSUBTOTAL 6.99\nTAX 0.68\nVisa 7.87\n"));
+        assertNull(x.total());
+        assertTrue(x.notes().stream().anyMatch(n -> n.contains("7.57 or 7.67")));
+    }
 }
