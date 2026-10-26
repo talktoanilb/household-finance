@@ -2,7 +2,7 @@
 
 A shared household tool for spending, subscriptions, insurance and health claims. Bills arrive as photos or manual entries, statements and billing emails are matched to them, and a weekly digest shows earnings, spending, anomalies and renewals.
 
-Status: **M0** done, **M1** in progress (M1a CSV parsers and M1b ingestion foundation done; M1d Chase checking PDF statements built; M1c learned CSV layouts and PDF layouts for other banks next). Specification: [`docs/spec.md`](docs/spec.md).
+Status: **M0** done, **M1** mostly done (M1a CSV parsers, M1b ingestion foundation, M1c learned CSV layouts, M1d Chase PDF statements, M1f bill and receipt photos). Still open in M1: PDF layouts for other banks, scanned and PDF bills, and the optional AI reading. There is no REST endpoint or screen yet (M3/M8), so everything runs through tests and Maven. Specification: [`docs/spec.md`](docs/spec.md).
 
 ## Layout
 
@@ -22,6 +22,7 @@ Status: **M0** done, **M1** in progress (M1a CSV parsers and M1b ingestion found
 docker compose up -d db                 # PostgreSQL on 127.0.0.1:5432
 
 cd core && mvn verify                   # builds, applies all migrations, runs the context test
+# Bill and receipt photos need the Tesseract program installed: brew install tesseract (Mac) or apt-get install tesseract-ocr
 
 cd agent && pip install -r requirements-dev.txt && pytest
 ```
@@ -42,7 +43,13 @@ Local credentials in `docker-compose.yml` and `application.yml` are for developm
 - **M1b** (`core/.../ingest/`): `ImportService` stages parsed lines, `Verifier` checks them in Java (running balance in either sort order, implausible dates), and anything unclear becomes a question for the user. Nothing reaches `transactions` until every question is answered; confirm, exclude a line, or correct an amount. Re-imports skip lines already saved, and the same file cannot be imported twice. Tables are in `V3__ingestion_staging.sql`.
 - **Chase checking PDF statements** (`ChasePdfStatementParser`, `ChasePdfImporter`): text is extracted locally with Apache PDFBox. The statement is checked against its own printed totals (beginning balance + every line = ending balance, deposits total, first-line balance), against the account's last 4 digits, and against the previous statement for the same account (a missing month or a balance that does not join up becomes a question). Only the last 4 digits of the account number are kept. Scanned PDFs are not supported yet and are refused with a clear message.
 - To check your own real statements without committing them: `REAL_STATEMENT_PDF="/path/one.pdf,/path/two.pdf" mvn -Dtest=RealStatementPdfTest test`. It prints only counts. Never commit real statements.
-- Not built yet: learned layouts for other banks (M1c), PDF statements and bill photos (M1d), re-verification after an amount correction, pending-to-cleared updates on re-import, and any REST endpoint or screen for answering questions (M3/M8).
+- **M1c** (V6): learned CSV layouts for other banks. A layout is saved once the user has confirmed it and is verified again on every import.
+- **M1f: bill and receipt photos** (`core/.../document/`, V7 `document_imports`): a photo is read locally by the Tesseract program (run from Java, no AI service). `DocumentExtractor` proposes vendor, amount and date; `DocumentVerifier` checks them in Java (subtotal + tax = total, plausible dates, 2-decimal amounts); nothing is saved until the user confirms. Bills are saved as pending expenses dated on the due date, receipts as posted expenses on the purchase date. Only a hash and the proposed values are kept; the photo and its text are not stored.
+  - Sideways and upside-down photos are rotated automatically; oversized photos are scaled down; photos with no readable amount or date are refused with nothing saved.
+  - Each photo is read at three sizes. If the readings disagree on a total, subtotal, tax or date, no value is proposed and the note lists the candidates. A total that fits no subtotal-plus-tax reading is not proposed either.
+  - Known limit: a digit misread that every reading repeats cannot be caught (for example 7.57 read as 7.67 on small thermal print). The user checks the proposal against the paper before confirming. Scans (for example from CamScanner, exported as JPG) read far better than camera photos.
+  - To check your own photos without committing them: `HF_PHOTOS=/path/to/folder mvn -Dtest=RealPhotosCheckTest test`. It prints only amounts, dates and notes (`HF_SHOW_TEXT=<n>` prints a masked copy of photo n's text). Never commit real receipts.
+- Not built yet: PDF layouts for other banks, scanned PDFs and PDF bills, the optional AI reading, choosing between candidate amounts (needs the UI), re-verification after an amount correction, pending-to-cleared updates on re-import, and any REST endpoint or screen for answering questions (M3/M8).
 
 ## Verification status (M0)
 

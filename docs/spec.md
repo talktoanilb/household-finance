@@ -199,9 +199,9 @@ Three services plus a web UI and email delivery.
 
 - **M0:** repo, this spec, CLAUDE.md, CI skeleton, PostgreSQL schema.
 - **M1a (done):** Chase and Citi CSV parsers, import fingerprint, V2 duplicate fix.
-- **M1b:** Ingestion foundation: accounts, saving verified lines, layout registry, verification checks, pending-question flow.
-- **M1c:** Learned-layout CSV for any bank (Bank of America and Wells Fargo synthetic fixtures).
-- **M1d:** PDF statements and bill photos: text layer, OCR, optional AI extraction, with the confirm-before-save flow.
+- **M1b (done):** Ingestion foundation: accounts, saving verified lines, layout registry, verification checks, pending-question flow.
+- **M1c (done):** Learned-layout CSV for any bank (Bank of America and Wells Fargo synthetic fixtures).
+- **M1d (partly done):** PDF statements and bill photos: text layer, OCR, optional AI extraction, with the confirm-before-save flow. Done: Chase PDF statements; bill and receipt photos with local Tesseract OCR (M1f). Open: PDF layouts for other banks, scanned PDFs and PDF bills, optional AI extraction.
 - **M2:** Java business logic (categorization, anomaly detection, subscription tracking).
 - **M3:** REST API and MCP server over the logic.
 - **M4:** Python LangGraph agent calling MCP tools, RAG over transaction history.
