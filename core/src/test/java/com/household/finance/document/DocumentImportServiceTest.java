@@ -183,6 +183,13 @@ class DocumentImportServiceTest {
     }
 
     @Test
+    void aNameWithNoAmountOrDateIsNotWorthAskingAbout() {
+        ocrText = "SOME STORE NAME\nthank you for visiting\n";
+        assertEquals(DocumentOutcome.Status.REJECTED, service.upload(household, user, png(1)).status());
+        assertEquals(0, count("SELECT count(*) FROM document_imports WHERE household_id = ?", household));
+    }
+
+    @Test
     void aFileThatIsNotAnImageIsRejectedBeforeReading() {
         DocumentOutcome out = service.upload(household, user, "not an image".getBytes());
         assertEquals(DocumentOutcome.Status.REJECTED, out.status());

@@ -140,4 +140,68 @@ class DocumentExtractorTest {
         assertTrue(DocumentExtractor.extract("   \n\n").isEmpty());
         assertTrue(DocumentExtractor.extract(null).isEmpty());
     }
+
+    // ---- garbled labels and several readings (all text synthetic) ----
+
+    @Test
+    void aTotalLabelMisreadByOneLetterIsStillTheTotal() {
+        var x = DocumentExtractor.extract("""
+                TEST MARKET
+                SUBTOTAL 10.00
+                TAX 0.80
+                TOTAL 10.80
+                """.replace("TOTAL 10.80", "T0TAL 10.80"));
+        assertEquals(new BigDecimal("10.80"), x.total());
+    }
+
+    @Test
+    void aGarbledSubtotalIsNeverTakenForTheTotal() {
+        var x = DocumentExtractor.extract("""
+                TEST MARKET
+                S BTOTAL 36.32
+                TAX 1 2.91
+                Visa 39.23
+                """);
+        assertEquals(new BigDecimal("39.23"), x.total());
+    }
+
+    @Test
+    void readingsThatAgreeGiveTheirAnswer() {
+        String text = "TEST MARKET\nTOTAL 12.34\n09/01/2026\n";
+        var x = DocumentExtractor.extractAll(java.util.List.of(text, text));
+        assertEquals(new BigDecimal("12.34"), x.total());
+        assertEquals(LocalDate.of(2026, 9, 1), x.documentDate());
+    }
+
+    @Test
+    void readingsThatSplitProposeNoTotalAndNameBothNumbers() {
+        var x = DocumentExtractor.extractAll(java.util.List.of(
+                "TEST MARKET\nTOTAL 7.57\n", "TEST MARKET\nTOTAL 7.67\n"));
+        assertNull(x.total());
+        assertTrue(x.notes().stream().anyMatch(n -> n.contains("7.57") && n.contains("7.67")));
+    }
+
+    @Test
+    void aValueOnlyOneReadingFoundIsKept() {
+        var x = DocumentExtractor.extractAll(java.util.List.of(
+                "TEST MARKET\nTOTAL 5.00\n", "TEST MARKET\nTOTAL 5.00\n09/02/2026\n"));
+        assertEquals(LocalDate.of(2026, 9, 2), x.documentDate());
+    }
+
+    @Test
+    void aMajorityDoesNotOutvoteADifferentReading() {
+        var x = DocumentExtractor.extractAll(java.util.List.of(
+                "TEST MARKET\nTOTAL 11.67\n", "TEST MARKET\nTOTAL 11.67\n", "TEST MARKET\nTOTAL 11.57\n"));
+        assertNull(x.total());
+        assertTrue(x.notes().stream().anyMatch(n -> n.contains("11.57 or 11.67")));
+    }
+
+    @Test
+    void aTaxThatReadingsDisagreeOnIsNotProposed() {
+        var x = DocumentExtractor.extractAll(java.util.List.of(
+                "TEST MARKET\nSUBTOTAL 6.99\nTAX 0.58\nTOTAL 7.57\n", "TEST MARKET\nSUBTOTAL 6.99\nTAX 0.68\nTOTAL 7.57\n"));
+        assertNull(x.tax());
+        assertEquals(new BigDecimal("7.57"), x.total());
+        assertEquals(new BigDecimal("6.99"), x.subtotal());
+    }
 }

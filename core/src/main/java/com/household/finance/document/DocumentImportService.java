@@ -61,22 +61,22 @@ public class DocumentImportService {
                     List.of("This exact photo was already uploaded. Nothing was changed."));
         }
 
-        String text;
+        List<String> readings;
         try {
-            text = ocr.read(image);
-        } catch (OcrUnavailableException e) {
+            readings = ocr.readAll(image);
+        } catch (OcrUnavailableException | UnusablePhotoException e) {
             return DocumentOutcome.rejected(e.getMessage());
         } catch (IOException | RuntimeException e) {
             return DocumentOutcome.rejected("The photo could not be read. Nothing was saved."
                     + " Try a clearer photo, or enter the item by hand.");
         }
-        if (text == null || text.isBlank()) {
+        if (readings == null || readings.stream().allMatch(t -> t == null || t.isBlank())) {
             return DocumentOutcome.rejected("No text could be read from this photo. Nothing was saved."
                     + " Retake it flat, in good light and in focus, or enter the item by hand.");
         }
-        DocumentExtractor.Extracted x = DocumentExtractor.extract(text);
-        if (x.isEmpty()) {
-            return DocumentOutcome.rejected("Nothing usable could be read from this photo. Nothing was saved."
+        DocumentExtractor.Extracted x = DocumentExtractor.extractAll(readings.stream().map(t -> t == null ? "" : t).toList());
+        if (!x.hasAmountOrDate()) {
+            return DocumentOutcome.rejected("No amount or date could be read from this photo. Nothing was saved."
                     + " Retake it flat, in good light and in focus, or enter the item by hand.");
         }
 
