@@ -10,6 +10,11 @@ spring:
   flyway:
     enabled: true
     locations: classpath:db/migration
+  servlet:
+    multipart:
+      # Photos are limited to 10 MB in DocumentImportService; Spring's own default (1 MB) would refuse real photos first.
+      max-file-size: 10MB
+      max-request-size: 11MB
 
 management:
   endpoints:
@@ -22,6 +27,8 @@ management:
 
 server:
   port: ${PORT:8080}
+  # There is no login yet (M3), so the app listens on this computer only. Do not change this on a shared network.
+  address: ${BIND_ADDRESS:127.0.0.1}
   error:
     include-message: never
     include-stacktrace: never

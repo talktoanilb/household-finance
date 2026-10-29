@@ -1,0 +1,267 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Household Finance: add a bill or receipt</title>
+<style>
+  :root { color-scheme: light dark; --fg:#1b1f24; --bg:#ffffff; --muted:#5b6570; --line:#cfd6dd; --accent:#0b5fff; --warn:#8a4b00; --warnbg:#fff4e0; --ok:#0a6b2d; --okbg:#e6f6ec; --bad:#9b1c1c; --badbg:#fdecec; }
+  @media (prefers-color-scheme: dark) { :root { --fg:#e8ecf0; --bg:#14181d; --muted:#9aa5b1; --line:#323a44; --accent:#6ea0ff; --warn:#ffd08a; --warnbg:#3a2c10; --ok:#8be0a8; --okbg:#10301c; --bad:#ffabab; --badbg:#3d1717; } }
+  * { box-sizing: border-box; }
+  body { margin:0; font:16px/1.45 system-ui, sans-serif; color:var(--fg); background:var(--bg); }
+  main { max-width: 40rem; margin: 0 auto; padding: 1rem 16px 3rem; }
+  h1 { font-size: 1.35rem; margin: .5rem 0 .25rem; }
+  h2 { font-size: 1.05rem; margin: 2rem 0 .5rem; }
+  p.note { color: var(--muted); margin: .25rem 0 1rem; }
+  label { display:block; margin:.75rem 0 .2rem; font-weight:600; }
+  input, select, button { font: inherit; padding:.55rem .6rem; border:1px solid var(--line); border-radius:6px; background:var(--bg); color:var(--fg); width:100%; }
+  button { width:auto; cursor:pointer; background:var(--accent); color:#fff; border-color:var(--accent); }
+  button.secondary { background:transparent; color:var(--fg); border-color:var(--line); }
+  button:disabled { opacity:.5; cursor:default; }
+  .row { display:flex; gap:.75rem; flex-wrap:wrap; } .row > div { flex:1 1 9rem; }
+  .actions { display:flex; gap:.75rem; margin-top:1.25rem; flex-wrap:wrap; }
+  .msg { margin:.75rem 0; padding:.6rem .8rem; border-radius:6px; border:1px solid var(--line); }
+  .msg.warn { background:var(--warnbg); color:var(--warn); border-color:var(--warn); }
+  .msg.ok { background:var(--okbg); color:var(--ok); border-color:var(--ok); }
+  .msg.bad { background:var(--badbg); color:var(--bad); border-color:var(--bad); }
+  .msg ul { margin:.25rem 0 0; padding-left:1.2rem; }
+  .q { border:1px solid var(--line); border-radius:6px; padding:.7rem .8rem; margin:.6rem 0; }
+  .q .actions { margin-top:.6rem; } .q input { width:8rem; }
+  [hidden] { display:none !important; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Add a bill or receipt</h1>
+  <p class="note">Pick a photo (JPEG or PNG, up to 10 MB). It is read on this computer. Nothing is saved until you check the values and press Save.</p>
+
+  <label for="file">Photo</label>
+  <input id="file" type="file" accept="image/jpeg,image/png">
+  <div class="actions"><button id="upload">Read photo</button></div>
+
+  <div id="messages" aria-live="polite"></div>
+
+  <form id="review" hidden>
+    <h2>Check these against the paper</h2>
+    <div class="row">
+      <div>
+        <label for="kind">Type</label>
+        <select id="kind">
+          <option value="UNKNOWN">Choose…</option>
+          <option value="RECEIPT">Receipt</option>
+          <option value="BILL">Bill</option>
+        </select>
+      </div>
+      <div>
+        <label for="category">Category</label>
+        <select id="category"><option value="">None</option></select>
+      </div>
+    </div>
+    <label for="vendor">Vendor</label>
+    <input id="vendor" type="text" maxlength="80" autocomplete="off">
+    <div class="row">
+      <div><label for="amount">Total</label><input id="amount" inputmode="decimal" placeholder="0.00" autocomplete="off"></div>
+      <div><label for="date" id="dateLabel">Date</label><input id="date" type="date"></div>
+    </div>
+    <div class="row">
+      <div><label for="subtotal">Subtotal (optional)</label><input id="subtotal" inputmode="decimal" placeholder="0.00" autocomplete="off"></div>
+      <div><label for="tax">Tax (optional)</label><input id="tax" inputmode="decimal" placeholder="0.00" autocomplete="off"></div>
+    </div>
+    <div class="actions">
+      <button type="submit" id="save">Save</button>
+      <button type="button" id="cancel" class="secondary">Cancel this upload</button>
+    </div>
+  </form>
+
+  <h2>Statement questions</h2>
+  <p class="note">Questions on a bank statement import that needs your answer before anything is saved.</p>
+  <div id="questions"></div>
+</main>
+
+<script>
+(function () {
+  'use strict';
+  var $ = function (id) { return document.getElementById(id); };
+  var importId = null;
+
+  function api(path, options) {
+    return fetch(path, options).then(function (res) {
+      return res.json().catch(function () { return null; }).then(function (body) {
+        return { ok: res.ok, status: res.status, body: body };
+      });
+    }).catch(function () {
+      return { ok: false, status: 0, body: { message: 'The app is not reachable. Is it running?' } };
+    });
+  }
+
+  // All server text goes in with textContent, never as HTML.
+  function show(lines, tone) {
+    var box = $('messages');
+    box.textContent = '';
+    if (!lines || !lines.length) { return; }
+    var div = document.createElement('div');
+    div.className = 'msg ' + tone;
+    if (lines.length === 1) {
+      div.textContent = lines[0];
+    } else {
+      var ul = document.createElement('ul');
+      lines.forEach(function (l) { var li = document.createElement('li'); li.textContent = l; ul.appendChild(li); });
+      div.appendChild(ul);
+    }
+    box.appendChild(div);
+  }
+
+  function linesOf(body) {
+    if (!body) { return ['Something went wrong. Nothing was saved.']; }
+    if (body.messages) { return body.messages; }
+    if (body.message) { return [body.message]; }
+    return ['Something went wrong. Nothing was saved.'];
+  }
+
+  function updateDateLabel() {
+    var k = $('kind').value;
+    $('dateLabel').textContent = k === 'BILL' ? 'Due date' : k === 'RECEIPT' ? 'Purchase date' : 'Date';
+  }
+
+  function fillForm(p) {
+    $('kind').value = p && p.kind ? p.kind : 'UNKNOWN';
+    $('vendor').value = p && p.vendor ? p.vendor : '';
+    $('amount').value = p && p.amount != null ? Number(p.amount).toFixed(2) : '';
+    $('date').value = p && p.date ? p.date : '';
+    $('subtotal').value = p && p.subtotal != null ? Number(p.subtotal).toFixed(2) : '';
+    $('tax').value = p && p.tax != null ? Number(p.tax).toFixed(2) : '';
+    updateDateLabel();
+  }
+
+  function resetUpload() {
+    importId = null;
+    $('review').hidden = true;
+    $('file').value = '';
+  }
+
+  function money(id, name) {
+    var v = $(id).value.trim();
+    if (v === '') { return { value: null }; }
+    if (!/^\d+(\.\d{1,2})?$/.test(v)) { return { error: name + ' must be a number with at most 2 decimals, like 8.31.' }; }
+    return { value: v };
+  }
+
+  $('kind').addEventListener('change', updateDateLabel);
+
+  $('upload').addEventListener('click', function () {
+    var f = $('file').files[0];
+    if (!f) { show(['Choose a photo first.'], 'warn'); return; }
+    var btn = $('upload');
+    btn.disabled = true;
+    show(['Reading the photo…'], 'ok');
+    var data = new FormData();
+    data.append('file', f);
+    api('/api/documents', { method: 'POST', body: data }).then(function (r) {
+      btn.disabled = false;
+      var b = r.body;
+      if (r.ok && b && b.status === 'NEEDS_CONFIRMATION') {
+        importId = b.importId;
+        fillForm(b.proposal);
+        $('review').hidden = false;
+        show(b.messages && b.messages.length ? b.messages : ['Read. Check each value against the paper, then save.'],
+             b.messages && b.messages.length ? 'warn' : 'ok');
+      } else {
+        resetUpload();
+        show(linesOf(b), 'bad');
+      }
+    });
+  });
+
+  $('review').addEventListener('submit', function (e) {
+    e.preventDefault();
+    if (importId == null) { return; }
+    var amount = money('amount', 'The total'), subtotal = money('subtotal', 'The subtotal'), tax = money('tax', 'The tax');
+    var err = amount.error || subtotal.error || tax.error;
+    if (err) { show([err], 'warn'); return; }
+    var body = {
+      kind: $('kind').value, vendor: $('vendor').value.trim(), amount: amount.value,
+      date: $('date').value || null, subtotal: subtotal.value, tax: tax.value,
+      categoryCode: $('category').value || null, accountId: null
+    };
+    var btn = $('save');
+    btn.disabled = true;
+    api('/api/documents/' + importId + '/confirm', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
+    }).then(function (r) {
+      btn.disabled = false;
+      var b = r.body;
+      if (r.ok && b && b.status === 'COMMITTED') {
+        resetUpload();
+        show(linesOf(b), 'ok');
+      } else if (r.ok && b && b.status === 'NEEDS_CONFIRMATION') {
+        show(linesOf(b), 'warn');   // a check failed: nothing saved, fix the values and press Save again
+      } else {
+        show(linesOf(b), 'bad');
+      }
+    });
+  });
+
+  $('cancel').addEventListener('click', function () {
+    if (importId == null) { return; }
+    api('/api/documents/' + importId + '/cancel', { method: 'POST' }).then(function (r) {
+      resetUpload();
+      show(linesOf(r.body), r.ok ? 'ok' : 'bad');
+    });
+  });
+
+  function loadCategories() {
+    api('/api/categories').then(function (r) {
+      if (!r.ok || !Array.isArray(r.body)) { return; }
+      r.body.forEach(function (c) {
+        var o = document.createElement('option');
+        o.value = c.code; o.textContent = c.label;
+        $('category').appendChild(o);
+      });
+    });
+  }
+
+  function answer(q, type, amount) {
+    var body = { type: type, correctedAmount: amount || null };
+    api('/api/questions/' + q.id + '/answer', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
+    }).then(function (r) {
+      show(linesOf(r.body), r.ok ? 'ok' : 'bad');
+      loadQuestions();
+    });
+  }
+
+  function loadQuestions() {
+    api('/api/questions').then(function (r) {
+      var box = $('questions');
+      box.textContent = '';
+      if (!r.ok || !Array.isArray(r.body)) { box.textContent = 'Could not load the questions.'; return; }
+      if (!r.body.length) { box.textContent = 'None waiting.'; return; }
+      r.body.forEach(function (q) {
+        var d = document.createElement('div'); d.className = 'q';
+        var t = document.createElement('div'); t.textContent = q.message; d.appendChild(t);
+        var a = document.createElement('div'); a.className = 'actions';
+        var yes = document.createElement('button'); yes.textContent = 'It is right'; yes.onclick = function () { answer(q, 'CONFIRM'); };
+        var no = document.createElement('button'); no.textContent = 'Leave this line out'; no.className = 'secondary';
+        no.onclick = function () { answer(q, 'EXCLUDE'); };
+        a.appendChild(yes); a.appendChild(no);
+        if (q.lineNo > 0) {
+          var amt = document.createElement('input'); amt.placeholder = 'Right amount'; amt.inputMode = 'decimal';
+          var fix = document.createElement('button'); fix.textContent = 'Fix amount'; fix.className = 'secondary';
+          fix.onclick = function () {
+            var v = amt.value.trim();
+            if (!/^\d+(\.\d{1,2})?$/.test(v)) { show(['Type the right amount, like 8.31.'], 'warn'); return; }
+            answer(q, 'CORRECT_AMOUNT', v);
+          };
+          a.appendChild(amt); a.appendChild(fix);
+        }
+        d.appendChild(a); box.appendChild(d);
+      });
+    });
+  }
+
+  loadCategories();
+  loadQuestions();
+})();
+</script>
+</body>
+</html>

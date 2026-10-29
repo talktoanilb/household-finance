@@ -79,7 +79,7 @@ class CardImportTest {
         ImportOutcome out = run(text());
         assertEquals(ImportOutcome.Status.REJECTED, out.status());
         assertTrue(out.messages().get(0).contains("4242"));
-        assertEquals(0, jdbc.queryForObject("SELECT count(*) FROM transactions", Integer.class));
+        assertEquals(0, jdbc.queryForObject("SELECT count(*) FROM transactions WHERE household_id = ?", Integer.class, household));
     }
 
     @Test
@@ -88,7 +88,7 @@ class CardImportTest {
         ImportOutcome out = run(text().replace("New Balance                          $42.34",
                 "New Balance                          $47.34"));
         assertEquals(ImportOutcome.Status.NEEDS_ANSWERS, out.status());
-        assertEquals(0, jdbc.queryForObject("SELECT count(*) FROM transactions", Integer.class));
+        assertEquals(0, jdbc.queryForObject("SELECT count(*) FROM transactions WHERE household_id = ?", Integer.class, household));
         assertEquals(1, service.openQuestions(household).size());
     }
 }
