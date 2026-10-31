@@ -2,8 +2,10 @@ package com.household.finance.web;
 
 import com.household.finance.document.DocumentImportService;
 import com.household.finance.document.DocumentOutcome;
+import com.household.finance.document.ai.AiReader;
 import java.io.IOException;
 import java.util.List;
+import java.util.Map;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -31,17 +33,26 @@ public class DocumentController {
     private final DocumentImportService documents;
     private final LocalIdentity identity;
     private final JdbcTemplate jdbc;
+    private final AiReader ai;
 
-    public DocumentController(DocumentImportService documents, LocalIdentity identity, JdbcTemplate jdbc) {
+    public DocumentController(DocumentImportService documents, LocalIdentity identity, JdbcTemplate jdbc, AiReader ai) {
         this.documents = documents;
         this.identity = identity;
         this.jdbc = jdbc;
+        this.ai = ai;
     }
 
     @PostMapping(path = "/documents", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    public ResponseEntity<DocumentOutcome> upload(@RequestParam("file") MultipartFile file) throws IOException {
+    public ResponseEntity<DocumentOutcome> upload(@RequestParam("file") MultipartFile file,
+            @RequestParam(value = "useAi", defaultValue = "false") boolean useAi) throws IOException {
         LocalIdentity.Who who = identity.current();
-        return respond(documents.upload(who.householdId(), who.userId(), file.getBytes()));
+        return respond(documents.upload(who.householdId(), who.userId(), file.getBytes(), useAi));
+    }
+
+    /** Whether AI reading is set up at all, so the page can enable or disable its checkbox. Never reveals the key. */
+    @GetMapping("/ai-status")
+    public Map<String, Boolean> aiStatus() {
+        return Map.of("available", ai.enabled());
     }
 
     @PostMapping("/documents/{id}/confirm")

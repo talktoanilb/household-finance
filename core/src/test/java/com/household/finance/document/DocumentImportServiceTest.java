@@ -156,14 +156,22 @@ class DocumentImportServiceTest {
     }
 
     @Test
-    void theSamePhotoIsRefusedUnlessTheEarlierUploadWasCancelled() {
+    void theSamePhotoResumesWhilePendingButIsRefusedOnceCommitted() {
         DocumentOutcome first = service.upload(household, user, png(1));
-        assertEquals(DocumentOutcome.Status.ALREADY_IMPORTED, service.upload(household, user, png(1)).status());
+        // Re-picking it while it is still waiting for confirmation resumes the same upload, not a refusal.
+        DocumentOutcome resumed = service.upload(household, user, png(1));
+        assertEquals(DocumentOutcome.Status.NEEDS_CONFIRMATION, resumed.status());
+        assertEquals(first.importId(), resumed.importId());
         // Another household uploading identical bytes is a separate upload.
         assertEquals(DocumentOutcome.Status.NEEDS_CONFIRMATION, service.upload(otherHousehold, user, png(1)).status());
-        service.cancel(household, first.importId(), user);
-        assertEquals(DocumentOutcome.Status.NEEDS_CONFIRMATION, service.upload(household, user, png(1)).status());
-        assertEquals(0, count("SELECT count(*) FROM transactions WHERE household_id = ?", household));
+
+        service.confirm(household, first.importId(), user, resumed.proposal(), null, null);
+        assertEquals(DocumentOutcome.Status.ALREADY_IMPORTED, service.upload(household, user, png(1)).status());
+
+        DocumentOutcome second = service.upload(household, user, png(2));
+        service.cancel(household, second.importId(), user);
+        assertEquals(DocumentOutcome.Status.NEEDS_CONFIRMATION, service.upload(household, user, png(2)).status());
+        assertEquals(1, count("SELECT count(*) FROM transactions WHERE household_id = ?", household));
     }
 
     @Test

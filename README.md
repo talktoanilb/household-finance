@@ -2,7 +2,7 @@
 
 A shared household tool for spending, subscriptions, insurance and health claims. Bills arrive as photos or manual entries, statements and billing emails are matched to them, and a weekly digest shows earnings, spending, anomalies and renewals.
 
-Status: **M0** done, **M1** mostly done (M1a CSV parsers, M1b ingestion foundation, M1c learned CSV layouts, M1d Chase PDF statements, M1f bill and receipt photos). Still open in M1: PDF layouts for other banks, scanned and PDF bills, and the optional AI reading. A thin REST layer and one upload page (bill and receipt photos, plus answering statement questions) now run locally; there is no login or full UI yet (M3/M8). Specification: [`docs/spec.md`](docs/spec.md).
+Status: **M0** done, **M1** mostly done (M1a CSV parsers, M1b ingestion foundation, M1c learned CSV layouts, M1d Chase PDF statements, M1f bill and receipt photos, opt-in AI photo reading). Still open in M1: PDF layouts for other banks and scanned/PDF bills. A thin REST layer and one upload page (bill and receipt photos, plus answering statement questions) now run locally; there is no login or full UI yet (M3/M8). Specification: [`docs/spec.md`](docs/spec.md).
 
 ## Layout
 
@@ -38,7 +38,7 @@ INSERT INTO app_users (household_id, email, display_name, password_hash)
 VALUES ((SELECT max(id) FROM households), 'you@example.com', 'You', 'not-a-login-yet');
 ```
 
-Then `cd core && mvn spring-boot:run` and open <http://localhost:8080/>. Pick a bill or receipt photo, check the values against the paper and press Save. Endpoints: `POST /api/documents` (upload), `POST /api/documents/{id}/confirm`, `POST /api/documents/{id}/cancel`, `GET /api/categories`, `GET /api/questions`, `POST /api/questions/{id}/answer`, `POST /api/imports/{id}/cancel`. Everything is checked again in Java on confirm; the upload step stores nothing in `transactions`.
+Then `cd core && mvn spring-boot:run` and open <http://localhost:8080/>. Pick a bill or receipt photo, optionally tick "Also read with AI" (needs `OPENAI_API_KEY`, see below), check the values against the paper and press Save. Endpoints: `POST /api/documents` (upload), `POST /api/documents/{id}/confirm`, `POST /api/documents/{id}/cancel`, `GET /api/categories`, `GET /api/questions`, `POST /api/questions/{id}/answer`, `POST /api/imports/{id}/cancel`. Everything is checked again in Java on confirm; the upload step stores nothing in `transactions`.
 
 Local credentials in `docker-compose.yml` and `application.yml` are for development only. Production secrets come from AWS Secrets Manager.
 
@@ -46,6 +46,7 @@ Local credentials in `docker-compose.yml` and `application.yml` are for developm
 
 - **UI:** React with Vite (M8). Not started.
 - **OCR and extraction:** Hybrid. Tesseract and PDF text run locally by default. AI extraction is opt-in (off by default) for hard layouts, because documents would leave the machine. Anything unclear is asked of the user, never guessed. Manual entry is the fallback.
+- **AI photo reading (opt-in):** OpenAI. Set `OPENAI_API_KEY` to turn it on; with no key, the checkbox on the upload page stays disabled. Only the one photo the user ticks the box for is sent, never logged. It only fills a value the local (Tesseract) reading left blank or could not settle; it never overrides a value already read locally, and every value still goes through the same Java checks before it can be saved. A photo whose OCR text has something shaped like a full card number (either grouped in 4s, or 13–19 digits on a line with a card/account word) is not sent, because the picture itself cannot be redacted. Re-picking the same photo while it is still unconfirmed resumes that same upload instead of being refused, and AI reading is tried at most once per upload (`ai_attempted`, V8) so retrying does not pay for a second call; a failed attempt (network, timeout) does not count against that limit. The model is a setting (`household.ai.model` / `AI_MODEL`, default `gpt-4o-mini`) since available models differ by account.
 - **Deployment:** Deferred to M9. Local Docker Compose until then.
 - **Plaid:** Not in v1. CSV statement upload first.
 
@@ -62,7 +63,7 @@ Local credentials in `docker-compose.yml` and `application.yml` are for developm
   - Each photo is read at three sizes. If the readings disagree on a total, subtotal, tax or date, no value is proposed and the note lists the candidates. A total that fits no subtotal-plus-tax reading is not proposed either.
   - Known limit: a digit misread that every reading repeats cannot be caught (for example 7.57 read as 7.67 on small thermal print). The user checks the proposal against the paper before confirming. Scans (for example from CamScanner, exported as JPG) read far better than camera photos.
   - To check your own photos without committing them: `HF_PHOTOS=/path/to/folder mvn -Dtest=RealPhotosCheckTest test`. It prints only amounts, dates and notes (`HF_SHOW_TEXT=<n>` prints a masked copy of photo n's text). Never commit real receipts.
-- Not built yet: PDF layouts for other banks, scanned PDFs and PDF bills, the optional AI reading, choosing between candidate amounts (needs the UI), re-verification after an amount correction, pending-to-cleared updates on re-import, and a real login, statement upload through the web (needs an account picker), and the full UI (M3/M8).
+- Not built yet: PDF layouts for other banks, scanned PDFs and PDF bills, choosing between candidate amounts on the page (needs a small UI change), re-verification after an amount correction, pending-to-cleared updates on re-import, a real login, statement upload through the web (needs an account picker), and the full UI (M3/M8).
 
 ## Verification status (M0)
 

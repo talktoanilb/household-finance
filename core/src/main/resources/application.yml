@@ -1,3 +1,9 @@
+household:
+  ai:
+    # Model for the opt-in AI photo reading (OpenAiReader). Off unless OPENAI_API_KEY is set in the environment;
+    # the key itself is never set here. Check your OpenAI account if this default model is refused.
+    model: ${AI_MODEL:gpt-4o-mini}
+
 spring:
   application:
     name: household-finance-core

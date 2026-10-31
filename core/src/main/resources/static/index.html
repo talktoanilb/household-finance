@@ -37,6 +37,11 @@
 
   <label for="file">Photo</label>
   <input id="file" type="file" accept="image/jpeg,image/png">
+  <p class="note" style="margin:.4rem 0 0;">
+    <label style="display:inline;font-weight:normal;"><input id="useAi" type="checkbox" style="width:auto;display:inline;vertical-align:middle;" disabled>
+    Also read with AI, for a value the local reading can't settle (sends this one photo to OpenAI)</label>
+    <span id="aiNote"></span>
+  </p>
   <div class="actions"><button id="upload">Read photo</button></div>
 
   <div id="messages" aria-live="polite"></div>
@@ -156,6 +161,7 @@
     show(['Reading the photo…'], 'ok');
     var data = new FormData();
     data.append('file', f);
+    data.append('useAi', $('useAi').checked ? 'true' : 'false');
     api('/api/documents', { method: 'POST', body: data }).then(function (r) {
       btn.disabled = false;
       var b = r.body;
@@ -259,8 +265,21 @@
     });
   }
 
+  function loadAiStatus() {
+    api('/api/ai-status').then(function (r) {
+      var box = $('useAi'), note = $('aiNote');
+      if (r.ok && r.body && r.body.available) {
+        box.disabled = false;
+      } else {
+        box.disabled = true;
+        note.textContent = ' (not set up for this app)';
+      }
+    });
+  }
+
   loadCategories();
   loadQuestions();
+  loadAiStatus();
 })();
 </script>
 </body>
