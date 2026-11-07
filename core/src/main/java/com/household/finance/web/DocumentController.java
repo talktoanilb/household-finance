@@ -49,6 +49,13 @@ public class DocumentController {
         return respond(documents.upload(who.householdId(), who.userId(), file.getBytes(), useAi));
     }
 
+    /** A bill as a PDF with a text layer (not a photo, not a scan). No AI reading is offered here. */
+    @PostMapping(path = "/documents/pdf-bill", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ResponseEntity<DocumentOutcome> uploadPdfBill(@RequestParam("file") MultipartFile file) throws IOException {
+        LocalIdentity.Who who = identity.current();
+        return respond(documents.uploadPdfBill(who.householdId(), who.userId(), file.getBytes()));
+    }
+
     /** Whether AI reading is set up at all, so the page can enable or disable its checkbox. Never reveals the key. */
     @GetMapping("/ai-status")
     public Map<String, Boolean> aiStatus() {

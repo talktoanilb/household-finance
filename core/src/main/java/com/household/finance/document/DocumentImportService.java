@@ -3,6 +3,7 @@ package com.household.finance.document;
 import com.household.finance.document.ai.AiReader;
 import com.household.finance.document.ai.AiReading;
 import com.household.finance.document.ai.AiUnavailableException;
+import com.household.finance.statement.PdfTextExtractor;
 import java.io.IOException;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -38,11 +39,17 @@ import org.springframework.transaction.annotation.Transactional;
  * once against them. {@code ai_attempted} (V8) remembers whether AI reading already ran for that upload, so ticking
  * the box again on a retry does not pay for a second call. Only a photo already COMMITTED to a transaction is
  * refused outright.
+ * <p>
+ * {@link #uploadPdfBill(long, long, byte[])} is the same flow for a bill with a text layer in its PDF (not a
+ * scan): its text is extracted locally with PDFBox, then read with the same {@link DocumentExtractor} and
+ * {@link DocumentVerifier} as a photo's OCR text, in the same {@code document_imports} table. No picture exists
+ * for a text-layer PDF, so AI reading is not offered for it; a scanned PDF is refused rather than misread.
  */
 @Service
 public class DocumentImportService {
 
     static final int MAX_IMAGE_BYTES = 10 * 1024 * 1024;
+    static final int MAX_PDF_BYTES = 10 * 1024 * 1024;
 
     /** Four or more groups of 4 digits separated by a space or dash: how a full card number is usually printed or
      * typed, e.g. "4242 4242 4242 4242". Always treated as a possible full card number. */
@@ -60,24 +67,34 @@ public class DocumentImportService {
         }
     };
 
+    private static final PdfTextExtractor NO_PDF = pdf -> {
+        throw new IOException("PDF bill reading is not set up.");
+    };
+
     private final JdbcTemplate jdbc;
     private final OcrEngine ocr;
     private final AiReader ai;
+    private final PdfTextExtractor pdfText;
     private final Clock clock;
 
     @Autowired
-    public DocumentImportService(JdbcTemplate jdbc, OcrEngine ocr, AiReader ai) {
-        this(jdbc, ocr, ai, Clock.systemDefaultZone());
+    public DocumentImportService(JdbcTemplate jdbc, OcrEngine ocr, AiReader ai, PdfTextExtractor pdfText) {
+        this(jdbc, ocr, ai, pdfText, Clock.systemDefaultZone());
     }
 
     DocumentImportService(JdbcTemplate jdbc, OcrEngine ocr, Clock clock) {
-        this(jdbc, ocr, NO_AI, clock);
+        this(jdbc, ocr, NO_AI, NO_PDF, clock);
     }
 
     DocumentImportService(JdbcTemplate jdbc, OcrEngine ocr, AiReader ai, Clock clock) {
+        this(jdbc, ocr, ai, NO_PDF, clock);
+    }
+
+    DocumentImportService(JdbcTemplate jdbc, OcrEngine ocr, AiReader ai, PdfTextExtractor pdfText, Clock clock) {
         this.jdbc = jdbc;
         this.ocr = ocr;
         this.ai = ai;
+        this.pdfText = pdfText;
         this.clock = clock;
     }
 
@@ -319,6 +336,85 @@ public class DocumentImportService {
     /** One row already staged for this exact photo, read back from {@code document_imports}. */
     private record ExistingImport(long id, String status, DocumentKind kind, String vendor, java.math.BigDecimal amount,
                                   java.math.BigDecimal subtotal, java.math.BigDecimal tax, LocalDate date, boolean aiAttempted) {}
+
+    /**
+     * Imports a bill from a PDF with a text layer (an invoice you downloaded, not a photo or a scan). The text is
+     * extracted locally and read by the same {@link DocumentExtractor} and {@link DocumentVerifier} as a photo's
+     * OCR text, in the same staging table, so the same dedupe/resume and confirm-before-save rules apply. A PDF
+     * that turns out to be a scan (no text layer) is refused with a plain message; it is not read as an image.
+     * <p>
+     * No picture exists for a text-layer PDF, so AI reading is not offered here.
+     */
+    @Transactional
+    public DocumentOutcome uploadPdfBill(long householdId, long userId, byte[] pdf) {
+        String unusable = checkPdf(pdf);
+        if (unusable != null) {
+            return DocumentOutcome.rejected(unusable);
+        }
+        String sha = sha256(pdf);
+        List<ExistingImport> found = jdbc.query("""
+                SELECT id, status, kind, proposed_vendor, proposed_amount, proposed_subtotal, proposed_tax, proposed_date, ai_attempted
+                FROM document_imports WHERE household_id = ? AND file_sha256 = ? AND status <> 'CANCELLED'
+                """, (rs, n) -> new ExistingImport(rs.getLong(1), rs.getString(2),
+                        DocumentKind.valueOf(rs.getString(3)), rs.getString(4), rs.getBigDecimal(5), rs.getBigDecimal(6),
+                        rs.getBigDecimal(7), rs.getObject(8, LocalDate.class), rs.getBoolean(9)),
+                householdId, sha);
+        if (!found.isEmpty()) {
+            ExistingImport e = found.get(0);
+            if (!"NEEDS_CONFIRMATION".equals(e.status())) {
+                return new DocumentOutcome(DocumentOutcome.Status.ALREADY_IMPORTED, null, null, null,
+                        List.of("This exact PDF was already uploaded. Nothing was changed."));
+            }
+            // Re-picking the same PDF just shows its stored values again; there is no AI merge to try for a PDF.
+            DocumentFields stored = new DocumentFields(e.kind(), e.vendor(), e.amount(), e.date(), e.subtotal(), e.tax());
+            List<String> messages = new ArrayList<>(DocumentVerifier.verify(stored, LocalDate.now(clock)));
+            return new DocumentOutcome(DocumentOutcome.Status.NEEDS_CONFIRMATION, e.id(), null, stored, messages);
+        }
+
+        String text;
+        try {
+            text = pdfText.extract(pdf);
+        } catch (IOException | RuntimeException ex) {
+            return DocumentOutcome.rejected("The PDF could not be read. It may be damaged or password-protected."
+                    + " Nothing was saved.");
+        }
+        if (text == null || text.isBlank()) {
+            return DocumentOutcome.rejected("This PDF has no readable text. It may be a scan, which is not supported yet."
+                    + " Nothing was saved. Enter the item by hand.");
+        }
+        DocumentExtractor.Extracted x = DocumentExtractor.extractAll(List.of(text));
+        if (!x.hasAmountOrDate()) {
+            return DocumentOutcome.rejected("No amount or date could be read from this PDF. Nothing was saved."
+                    + " Enter the item by hand.");
+        }
+
+        LocalDate proposedDate = x.kind() == DocumentKind.BILL && x.dueDate() != null ? x.dueDate() : x.documentDate();
+        DocumentFields proposal = new DocumentFields(x.kind(), x.vendor(), x.total(), proposedDate, x.subtotal(), x.tax());
+
+        long importId = jdbc.queryForObject("""
+                INSERT INTO document_imports (household_id, file_sha256, kind, status, proposed_vendor, proposed_amount,
+                                              proposed_subtotal, proposed_tax, proposed_date, uploaded_by_user_id, ai_attempted)
+                VALUES (?, ?, ?, 'NEEDS_CONFIRMATION', ?, ?, ?, ?, ?, ?, FALSE) RETURNING id
+                """, Long.class, householdId, sha, x.kind().name(), x.vendor(), x.total(), x.subtotal(), x.tax(),
+                proposedDate, userId);
+        audit(householdId, userId, "DOCUMENT_PDF_UPLOADED", importId);
+
+        List<String> messages = new ArrayList<>(x.notes());
+        messages.addAll(DocumentVerifier.verify(proposal, LocalDate.now(clock)));
+        return new DocumentOutcome(DocumentOutcome.Status.NEEDS_CONFIRMATION, importId, null, proposal, messages);
+    }
+
+    /** Starts with "%PDF-", up to 10 MB. Returns a plain message, or null when the bytes look like a usable PDF. */
+    private static String checkPdf(byte[] pdf) {
+        if (pdf == null || pdf.length == 0) {
+            return "The PDF is empty. Nothing was saved.";
+        }
+        if (pdf.length > MAX_PDF_BYTES) {
+            return "The PDF is larger than 10 MB. Nothing was saved.";
+        }
+        boolean looksLikePdf = pdf.length > 5 && pdf[0] == '%' && pdf[1] == 'P' && pdf[2] == 'D' && pdf[3] == 'F' && pdf[4] == '-';
+        return looksLikePdf ? null : "Only PDF files are supported here. Nothing was saved.";
+    }
 
     /**
      * Saves the user's confirmed values as one transaction, if they pass every check. Otherwise nothing is saved and

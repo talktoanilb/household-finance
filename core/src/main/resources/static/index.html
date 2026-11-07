@@ -33,10 +33,10 @@
 <body>
 <main>
   <h1>Add a bill or receipt</h1>
-  <p class="note">Pick a photo (JPEG or PNG, up to 10 MB). It is read on this computer. Nothing is saved until you check the values and press Save.</p>
+  <p class="note">Pick a photo (JPEG or PNG) or a bill PDF with a text layer (not a scan), up to 10 MB. It is read on this computer. Nothing is saved until you check the values and press Save.</p>
 
   <label for="file">Photo</label>
-  <input id="file" type="file" accept="image/jpeg,image/png">
+  <input id="file" type="file" accept="image/jpeg,image/png,application/pdf">
   <p class="note" style="margin:.4rem 0 0;">
     <label style="display:inline;font-weight:normal;"><input id="useAi" type="checkbox" style="width:auto;display:inline;vertical-align:middle;" disabled>
     Also read with AI, for a value the local reading can't settle (sends this one photo to OpenAI)</label>
@@ -153,16 +153,38 @@
 
   $('kind').addEventListener('change', updateDateLabel);
 
+  function isPdf(file) {
+    return file.type === 'application/pdf' || /\.pdf$/i.test(file.name);
+  }
+
+  // A PDF bill has no picture to send, so the AI checkbox is pointless for it; reflect that as soon as a file is picked.
+  $('file').addEventListener('change', function () {
+    var f = $('file').files[0];
+    var box = $('useAi');
+    if (f && isPdf(f)) {
+      box.checked = false;
+      box.disabled = true;
+    } else {
+      loadAiStatus();
+    }
+  });
+
   $('upload').addEventListener('click', function () {
     var f = $('file').files[0];
-    if (!f) { show(['Choose a photo first.'], 'warn'); return; }
+    if (!f) { show(['Choose a photo or a PDF bill first.'], 'warn'); return; }
+    var pdf = isPdf(f);
     var btn = $('upload');
     btn.disabled = true;
-    show(['Reading the photo…'], 'ok');
+    show([pdf ? 'Reading the PDF…' : 'Reading the photo…'], 'ok');
     var data = new FormData();
     data.append('file', f);
-    data.append('useAi', $('useAi').checked ? 'true' : 'false');
-    api('/api/documents', { method: 'POST', body: data }).then(function (r) {
+    var endpoint = '/api/documents';
+    if (pdf) {
+      endpoint = '/api/documents/pdf-bill';
+    } else {
+      data.append('useAi', $('useAi').checked ? 'true' : 'false');
+    }
+    api(endpoint, { method: 'POST', body: data }).then(function (r) {
       btn.disabled = false;
       var b = r.body;
       if (r.ok && b && b.status === 'NEEDS_CONFIRMATION') {
